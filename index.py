@@ -1,5 +1,5 @@
 import json
-import random
+import secrets
 import hashlib
 import hmac
 import os
@@ -49,18 +49,7 @@ def verifyPassword(password, guardado):
 	return hmac.compare_digest(hashlib.md5(str(password).encode()).hexdigest(), guardado.lower())
 
 def getToken():
-	tiempo = datetime.now().timestamp()
-	numero = random.random()
-	cadena = str(tiempo) + str(numero)
-	numero2 = random.random()
-	cadena2 = str(numero)+str(tiempo)+str(numero2)
-	m = hashlib.sha1()
-	m.update(cadena.encode())
-	P = m.hexdigest()
-	m = hashlib.md5()
-	m.update(cadena.encode())
-	Q = m.hexdigest()
-	return f"{P[:20]}{Q[20:]}"
+	return secrets.token_urlsafe(32)
 
 """
 */ 
@@ -169,10 +158,6 @@ def Login():
 		except Exception as e:
 			print(e)
 	T = getToken();
-	#file_put_contents('/tmp/log','insert into AccesoToken values('.R[0].',"'.T.'",now())');
-	with open("/tmp/log","a") as log:
-		log.write(f'Delete from AccesoToken where id_Usuario = "{idLogin}"\n')
-		log.write(f'insert into AccesoToken values({idLogin},"{T}",now())\n')
 	
 	
 	try:
@@ -354,4 +339,4 @@ def Descargar():
 	return static_file(R[0][1],Path(".").resolve())
 
 if __name__ == '__main__':
-    run(host='localhost', port=8080, debug=True)
+    run(host='localhost', port=8080, debug=False)
