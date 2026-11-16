@@ -246,6 +246,15 @@ def Imagen():
 		db.close()
 		return {"R":-4}
 	id_Usuario = R[0][0]
+	EXTENSIONES = ('png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'txt', 'pdf')
+	ext = request.json['ext']
+	ext = str(ext).strip().lower().lstrip('.')
+	if ext not in EXTENSIONES:
+		db.close()
+		return {"R":-5}
+	nombre = ''.join(c for c in str(request.json['name']) if c.isalnum() or c in '._ -')[:120]
+	if not nombre.strip() or nombre.strip('. ') == '':
+		nombre = 'archivo'
 	with open(f'tmp/{id_Usuario}',"wb") as imagen:
 		imagen.write(base64.b64decode(request.json['data'].encode()))
 	
@@ -254,12 +263,12 @@ def Imagen():
 	# Guardar info del archivo en la base de datos
 	try:
 		with db.cursor() as cursor:
-			cursor.execute('insert into Imagen values(null,%s,%s,%s)', (request.json['name'], 'img/', id_Usuario))
+			cursor.execute('insert into Imagen values(null,%s,%s,%s)', (nombre, 'img/', id_Usuario))
 			idImagen = cursor.lastrowid
-			cursor.execute('update Imagen set ruta = %s where id = %s', ('img/' + str(idImagen) + '.' + str(request.json['ext']), idImagen))
+			cursor.execute('update Imagen set ruta = %s where id = %s', ('img/' + str(idImagen) + '.' + ext, idImagen))
 			db.commit()
 			# Mover archivo a su nueva locacion
-			shutil.move('tmp/'+str(id_Usuario),'img/'+str(idImagen)+'.'+str(request.json['ext']))
+			shutil.move('tmp/'+str(id_Usuario),'img/'+str(idImagen)+'.'+ext)
 			return {"R":0,"D":idImagen}
 	except Exception as e: 
 		print(e)
