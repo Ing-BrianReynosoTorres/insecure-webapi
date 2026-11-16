@@ -242,7 +242,10 @@ def Imagen():
 		return {"R":-2}
 	
 	
-	id_Usuario = R[0][0];
+	if not R:
+		db.close()
+		return {"R":-4}
+	id_Usuario = R[0][0]
 	with open(f'tmp/{id_Usuario}',"wb") as imagen:
 		imagen.write(base64.b64decode(request.json['data'].encode()))
 	
@@ -299,13 +302,21 @@ def Descargar():
 	# TODO validar correo en json
 	# Comprobar que el usuario sea valido
 	TKN = request.json['token'];
-	idImagen = request.json['id'];
+	try:
+		idImagen = int(request.json['id'])
+	except (TypeError, ValueError):
+		db.close()
+		return {"R":-1}
 	
 	R = False
 	try:
 		with db.cursor() as cursor:
 			cursor.execute('select id_Usuario from AccesoToken where token = %s limit 1', (TKN,))
 			R = cursor.fetchall()
+		if not R:
+			db.close()
+			return {"R":-2}
+		id_UsuarioToken = R[0][0]
 	except Exception as e: 
 		print(e)
 		db.close()
@@ -317,12 +328,19 @@ def Descargar():
 	
 	try:
 		with db.cursor() as cursor:
-			cursor.execute('select name, ruta from Imagen where id = %s', (idImagen,))
+			cursor.execute('select name, ruta, id_Usuario from Imagen where id = %s', (idImagen,))
 			R = cursor.fetchall()
 	except Exception as e: 
 		print(e)
 		db.close()
 		return {"R":-3}
+	if not R:
+		db.close()
+		return {"R":-3}
+	if str(R[0][2]) != str(id_UsuarioToken):
+		db.close()
+		return {"R":-4}
+
 	print(Path("img").resolve(),R[0][1])
 	return static_file(R[0][1],Path(".").resolve())
 
