@@ -1,6 +1,8 @@
 import json
 import random
 import hashlib
+import hmac
+import os
 import mysql.connector
 import base64
 import shutil
@@ -25,6 +27,27 @@ function loadDatabaseSettings(pathjs):
 	return json_a;
 
 """
+
+PBKDF2_ITERACIONES = 260000
+
+def hashPassword(password):
+	sal = os.urandom(16)
+	dk = hashlib.pbkdf2_hmac('sha256', str(password).encode(), sal, PBKDF2_ITERACIONES)
+	return 'pbkdf2_sha256$%d$%s$%s' % (PBKDF2_ITERACIONES, base64.b64encode(sal).decode(), base64.b64encode(dk).decode())
+
+def verifyPassword(password, guardado):
+	if not guardado:
+		return False
+	guardado = str(guardado)
+	if guardado.startswith('pbkdf2_sha256$'):
+		try:
+			_, iteraciones, sal, esperado = guardado.split('$')
+			dk = hashlib.pbkdf2_hmac('sha256', str(password).encode(), base64.b64decode(sal), int(iteraciones))
+			return hmac.compare_digest(base64.b64encode(dk).decode(), esperado)
+		except Exception:
+			return False
+	return hmac.compare_digest(hashlib.md5(str(password).encode()).hexdigest(), guardado.lower())
+
 def getToken():
 	tiempo = datetime.now().timestamp()
 	numero = random.random()
@@ -73,7 +96,7 @@ def Registro():
 	R = False
 	try:
 		with db.cursor() as cursor:
-			cursor.execute('insert into Usuario values(null,%s,%s,md5(%s))', (request.json['uname'], request.json['email'], request.json['password']))
+			cursor.execute('insert into Usuario values(null,%s,%s,%s)', (request.json['uname'], request.json['email'], hashPassword(request.json['password'])))
 			R = cursor.lastrowid
 			db.commit()
 		db.close()
@@ -121,7 +144,7 @@ def Login():
 	R = False
 	try:
 		with db.cursor() as cursor:
-			cursor.execute('select id from Usuario where uname = %s and password = md5(%s)', (request.json['uname'], request.json['password']))
+			cursor.execute('select id, password from Usuario where uname = %s', (request.json['uname'],))
 			R = cursor.fetchall()
 	except Exception as e: 
 		print(e)
@@ -133,17 +156,29 @@ def Login():
 		db.close()
 		return {"R":-3}
 	
+	idLogin = R[0][0]
+	passwordGuardado = R[0][1]
+	if not verifyPassword(request.json['password'], passwordGuardado):
+		db.close()
+		return {"R":-3}
+	if not str(passwordGuardado).startswith('pbkdf2_sha256$'):
+		try:
+			with db.cursor() as cursor:
+				cursor.execute('update Usuario set password = %s where id = %s', (hashPassword(request.json['password']), idLogin))
+			db.commit()
+		except Exception as e:
+			print(e)
 	T = getToken();
 	#file_put_contents('/tmp/log','insert into AccesoToken values('.R[0].',"'.T.'",now())');
 	with open("/tmp/log","a") as log:
-		log.write(f'Delete from AccesoToken where id_Usuario = "{R[0][0]}"\n')
-		log.write(f'insert into AccesoToken values({R[0][0]},"{T}",now())\n')
+		log.write(f'Delete from AccesoToken where id_Usuario = "{idLogin}"\n')
+		log.write(f'insert into AccesoToken values({idLogin},"{T}",now())\n')
 	
 	
 	try:
 		with db.cursor() as cursor:
-			cursor.execute('delete from AccesoToken where id_Usuario = %s', (R[0][0],))
-			cursor.execute('insert into AccesoToken values(%s,%s,now())', (R[0][0], T))
+			cursor.execute('delete from AccesoToken where id_Usuario = %s', (idLogin,))
+			cursor.execute('insert into AccesoToken values(%s,%s,now())', (idLogin, T))
 			db.commit()
 			db.close()
 			return {"R":0,"D":T}
