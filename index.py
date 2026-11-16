@@ -7,9 +7,8 @@ import mysql.connector
 import base64
 import gzip
 import shutil
-from datetime import datetime
 from pathlib import Path
-from bottle import route, run, template, post, request, static_file
+from bottle import run, post, request, static_file
 
 
 
@@ -95,23 +94,22 @@ def Registro():
 	####/ obtener el cuerpo de la peticion
 	if not request.json:
 		return {"R":-1}
-	R = 'uname' in request.json and 'email' in request.json and 'password' in request.json
+	camposOk = 'uname' in request.json and 'email' in request.json and 'password' in request.json
 	# TODO checar si estan vacio los elementos del json
-	if not R:
+	if not camposOk:
 		return {"R":-1}
 	# TODO validar correo en json
 	# TODO Control de error de la DB
-	R = False
 	try:
 		with db.cursor() as cursor:
 			cursor.execute('insert into Usuario values(null,%s,%s,%s)', (request.json['uname'], request.json['email'], hashPassword(request.json['password'])))
-			R = cursor.lastrowid
+			idNuevo = cursor.lastrowid
 			db.commit()
 		db.close()
 	except Exception as e:
 		print(e) 
 		return {"R":-2}
-	return {"R":0,"D":R}
+	return {"R":0,"D":idNuevo}
 
 
 
@@ -136,30 +134,29 @@ def Login():
 	if not request.json:
 		return {"R":-1}
 	######/
-	R = 'uname' in request.json  and 'password' in request.json
+	camposOk = 'uname' in request.json and 'password' in request.json
 	# TODO checar si estan vacio los elementos del json
-	if not R:
+	if not camposOk:
 		return {"R":-1}
 	
 	# TODO validar correo en json
 	# TODO Control de error de la DB
-	R = False
 	try:
 		with db.cursor() as cursor:
 			cursor.execute('select id, password from Usuario where uname = %s', (request.json['uname'],))
-			R = cursor.fetchall()
+			usuario = cursor.fetchall()
 	except Exception as e: 
 		print(e)
 		db.close()
 		return {"R":-2}
 	
 	
-	if not R:
+	if not usuario:
 		db.close()
 		return {"R":-3}
 	
-	idLogin = R[0][0]
-	passwordGuardado = R[0][1]
+	idLogin = usuario[0][0]
+	passwordGuardado = usuario[0][1]
 	if not verifyPassword(request.json['password'], passwordGuardado):
 		db.close()
 		return {"R":-3}
@@ -184,12 +181,12 @@ def Login():
 	try:
 		with db.cursor() as cursor:
 			cursor.execute('select id_Usuario from AccesoToken where id_Usuario = %s and token = %s and fecha > (now() - interval 5 minute)', (idLogin, 'OTP:' + str(request.json['otp']).strip()))
-			R = cursor.fetchall()
+			otpValido = cursor.fetchall()
 	except Exception as e:
 		print(e)
 		db.close()
 		return {"R":-5}
-	if not R:
+	if not otpValido:
 		db.close()
 		return {"R":-5}
 
@@ -231,9 +228,9 @@ def Imagen():
 	if not request.json:
 		return {"R":-1}
 	######/
-	R = 'name' in request.json  and 'data' in request.json and 'ext' in request.json  and 'token' in request.json
+	camposOk = 'name' in request.json and 'data' in request.json and 'ext' in request.json and 'token' in request.json
 	# TODO checar si estan vacio los elementos del json
-	if not R:
+	if not camposOk:
 		return {"R":-1}
 	
 	db = conectarBd();
@@ -241,21 +238,20 @@ def Imagen():
 	# Validar si el usuario esta en la base de datos
 	TKN = request.json['token'];
 	
-	R = False
 	try:
 		with db.cursor() as cursor:
 			cursor.execute('select id_Usuario from AccesoToken where token = %s', (TKN,))
-			R = cursor.fetchall()
+			filaToken = cursor.fetchall()
 	except Exception as e: 
 		print(e)
 		db.close()
 		return {"R":-2}
 	
 	
-	if not R:
+	if not filaToken:
 		db.close()
 		return {"R":-4}
-	id_Usuario = R[0][0]
+	id_Usuario = filaToken[0][0]
 	EXTENSIONES = ('png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'txt', 'pdf')
 	ext = request.json['ext']
 	ext = str(ext).strip().lower().lstrip('.')
@@ -263,7 +259,7 @@ def Imagen():
 		db.close()
 		return {"R":-5}
 	nombre = ''.join(c for c in str(request.json['name']) if c.isalnum() or c in '._ -')[:120]
-	if not nombre.strip() or nombre.strip('. ') == '':
+	if not nombre.strip('. '):
 		nombre = 'archivo'
 	contenido = leerImagen(request.json['data'])
 	if not contenido:
@@ -311,9 +307,9 @@ def Descargar():
 	if not request.json:
 		return {"R":-1}
 	######/
-	R = 'token' in request.json and 'id' in request.json  
+	camposOk = 'token' in request.json and 'id' in request.json  
 	# TODO checar si estan vacio los elementos del json
-	if not R:
+	if not camposOk:
 		return {"R":-1}
 	
 	# TODO validar correo en json
@@ -325,15 +321,14 @@ def Descargar():
 		db.close()
 		return {"R":-1}
 	
-	R = False
 	try:
 		with db.cursor() as cursor:
 			cursor.execute('select id_Usuario from AccesoToken where token = %s limit 1', (TKN,))
-			R = cursor.fetchall()
-		if not R:
+			filaToken = cursor.fetchall()
+		if not filaToken:
 			db.close()
 			return {"R":-2}
-		id_UsuarioToken = R[0][0]
+		id_UsuarioToken = filaToken[0][0]
 	except Exception as e: 
 		print(e)
 		db.close()
@@ -346,20 +341,19 @@ def Descargar():
 	try:
 		with db.cursor() as cursor:
 			cursor.execute('select name, ruta, id_Usuario from Imagen where id = %s', (idImagen,))
-			R = cursor.fetchall()
+			imagen = cursor.fetchall()
 	except Exception as e: 
 		print(e)
 		db.close()
 		return {"R":-3}
-	if not R:
+	if not imagen:
 		db.close()
 		return {"R":-3}
-	if str(R[0][2]) != str(id_UsuarioToken):
+	if str(imagen[0][2]) != str(id_UsuarioToken):
 		db.close()
 		return {"R":-4}
 
-	print(Path("img").resolve(),R[0][1])
-	return static_file(R[0][1],Path(".").resolve())
+	return static_file(imagen[0][1], Path(".").resolve())
 
 if __name__ == '__main__':
     run(host='localhost', port=8080, debug=False)
