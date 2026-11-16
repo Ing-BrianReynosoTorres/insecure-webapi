@@ -67,6 +67,15 @@ def guardarToken(db, idUsuario, valor):
 		cursor.execute('insert into AccesoToken values(%s,%s,now())', (idUsuario, valor))
 	db.commit()
 
+def leerImagen(data):
+	try:
+		contenido = base64.b64decode(str(data), validate=True)
+		if contenido[:2] == b'\x1f\x8b':
+			contenido = gzip.decompress(contenido)
+		return contenido
+	except Exception:
+		return None
+
 """
 */ 
 # Registro
@@ -256,21 +265,7 @@ def Imagen():
 	nombre = ''.join(c for c in str(request.json['name']) if c.isalnum() or c in '._ -')[:120]
 	if not nombre.strip() or nombre.strip('. ') == '':
 		nombre = 'archivo'
-	# La imagen llega comprimida con Gzip y codificada en Base64: primero se
-	# decodifica el Base64 y despues se descomprime el Gzip (imagen original)
-	try:
-		contenido = base64.b64decode(str(request.json['data']).encode(), validate=True)
-	except Exception as e:
-		print(e)
-		db.close()
-		return {"R":-6}
-	if contenido[:2] == bytes([0x1f, 0x8b]):
-		try:
-			contenido = gzip.decompress(contenido)
-		except Exception as e:
-			print(e)
-			db.close()
-			return {"R":-6}
+	contenido = leerImagen(request.json['data'])
 	if not contenido:
 		db.close()
 		return {"R":-6}
