@@ -29,6 +29,15 @@ function loadDatabaseSettings(pathjs):
 
 """
 
+def conectarBd():
+	dbcnf = loadDatabaseSettings('db.json')
+	return mysql.connector.connect(
+		host='localhost', port = dbcnf['port'],
+		database = dbcnf['dbname'],
+		user = dbcnf['user'],
+		password = dbcnf['password']
+	)
+
 PBKDF2_ITERACIONES = 260000
 
 def hashPassword(password):
@@ -52,6 +61,12 @@ def verifyPassword(password, guardado):
 def getToken():
 	return secrets.token_urlsafe(32)
 
+def guardarToken(db, idUsuario, valor):
+	with db.cursor() as cursor:
+		cursor.execute('delete from AccesoToken where id_Usuario = %s', (idUsuario,))
+		cursor.execute('insert into AccesoToken values(%s,%s,now())', (idUsuario, valor))
+	db.commit()
+
 """
 */ 
 # Registro
@@ -67,13 +82,7 @@ def getToken():
 """
 @post('/Registro')
 def Registro():
-	dbcnf = loadDatabaseSettings('db.json');
-	db = mysql.connector.connect(
-		host='localhost', port = dbcnf['port'],
-		database = dbcnf['dbname'],
-		user = dbcnf['user'],
-		password = dbcnf['password']
-	)
+	db = conectarBd();
 	####/ obtener el cuerpo de la peticion
 	if not request.json:
 		return {"R":-1}
@@ -113,13 +122,7 @@ def Registro():
 
 @post('/Login')
 def Login():
-	dbcnf = loadDatabaseSettings('db.json');
-	db = mysql.connector.connect(
-		host='localhost', port = dbcnf['port'],
-		database = dbcnf['dbname'],
-		user = dbcnf['user'],
-		password = dbcnf['password']
-	)
+	db = conectarBd();
 	###/ obtener el cuerpo de la peticion
 	if not request.json:
 		return {"R":-1}
@@ -158,21 +161,17 @@ def Login():
 			db.commit()
 		except Exception as e:
 			print(e)
-	# R003 - segundo factor: OTP de 6 digitos con vigencia de 5 minutos
 	if 'otp' not in request.json:
 		codigo = '%06d' % secrets.randbelow(1000000)
 		try:
-			with db.cursor() as cursor:
-				cursor.execute('delete from AccesoToken where id_Usuario = %s', (idLogin,))
-				cursor.execute('insert into AccesoToken values(%s,%s,now())', (idLogin, 'OTP:' + codigo))
-			db.commit()
-			db.close()
+			guardarToken(db, idLogin, 'OTP:' + codigo)
 		except Exception as e:
 			print(e)
 			db.close()
 			return {"R":-4}
-		# En produccion el OTP viaja por correo/SMS; para la demo se devuelve en la respuesta
+		db.close()
 		return {"R":0,"D":{"otp_required":1,"id_Usuario":idLogin,"otp":codigo}}
+
 	try:
 		with db.cursor() as cursor:
 			cursor.execute('select id_Usuario from AccesoToken where id_Usuario = %s and token = %s and fecha > (now() - interval 5 minute)', (idLogin, 'OTP:' + str(request.json['otp']).strip()))
@@ -185,20 +184,15 @@ def Login():
 		db.close()
 		return {"R":-5}
 
-	T = getToken();
-	
-	
+	token = getToken()
 	try:
-		with db.cursor() as cursor:
-			cursor.execute('delete from AccesoToken where id_Usuario = %s', (idLogin,))
-			cursor.execute('insert into AccesoToken values(%s,%s,now())', (idLogin, T))
-			db.commit()
-			db.close()
-			return {"R":0,"D":T}
+		guardarToken(db, idLogin, token)
 	except Exception as e:
 		print(e)
 		db.close()
 		return {"R":-4}
+	db.close()
+	return {"R":0,"D":token}
 
 """
 /*
@@ -233,13 +227,7 @@ def Imagen():
 	if not R:
 		return {"R":-1}
 	
-	dbcnf = loadDatabaseSettings('db.json');
-	db = mysql.connector.connect(
-		host='localhost', port = dbcnf['port'],
-		database = dbcnf['dbname'],
-		user = dbcnf['user'],
-		password = dbcnf['password']
-	)
+	db = conectarBd();
 
 	# Validar si el usuario esta en la base de datos
 	TKN = request.json['token'];
@@ -321,13 +309,7 @@ def Imagen():
 
 @post('/Descargar')
 def Descargar():
-	dbcnf = loadDatabaseSettings('db.json');
-	db = mysql.connector.connect(
-		host='localhost', port = dbcnf['port'],
-		database = dbcnf['dbname'],
-		user = dbcnf['user'],
-		password = dbcnf['password']
-	)
+	db = conectarBd();
 	
 	
 	###/ obtener el cuerpo de la peticion
