@@ -157,6 +157,33 @@ def Login():
 			db.commit()
 		except Exception as e:
 			print(e)
+	# R003 - segundo factor: OTP de 6 digitos con vigencia de 5 minutos
+	if 'otp' not in request.json:
+		codigo = '%06d' % secrets.randbelow(1000000)
+		try:
+			with db.cursor() as cursor:
+				cursor.execute('delete from AccesoToken where id_Usuario = %s', (idLogin,))
+				cursor.execute('insert into AccesoToken values(%s,%s,now())', (idLogin, 'OTP:' + codigo))
+			db.commit()
+			db.close()
+		except Exception as e:
+			print(e)
+			db.close()
+			return {"R":-4}
+		# En produccion el OTP viaja por correo/SMS; para la demo se devuelve en la respuesta
+		return {"R":0,"D":{"otp_required":1,"id_Usuario":idLogin,"otp":codigo}}
+	try:
+		with db.cursor() as cursor:
+			cursor.execute('select id_Usuario from AccesoToken where id_Usuario = %s and token = %s and fecha > (now() - interval 5 minute)', (idLogin, 'OTP:' + str(request.json['otp']).strip()))
+			R = cursor.fetchall()
+	except Exception as e:
+		print(e)
+		db.close()
+		return {"R":-5}
+	if not R:
+		db.close()
+		return {"R":-5}
+
 	T = getToken();
 	
 	
